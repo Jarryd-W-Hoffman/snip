@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"snip/storage"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -48,18 +50,47 @@ command string from storage, and executes it inside a platform-appropriate subsh
 			os.Exit(1)
 		}
 
+		finalCommand := targetSnippet.Command
+
+		re := regexp.MustCompile(`\{\{([^}]+)\}\}`)
+		matches := re.FindAllStringSubmatch(finalCommand, -1)
+
+		if len(matches) > 0 {
+			fmt.Printf("📋 Snippet '%s' requires context variable values:\n\n", name)
+			seen := make(map[string]bool)
+			replacements := make(map[string]string)
+
+			for _, match := range matches {
+				varName := match[1]
+				if seen[varName] {
+					continue
+				}
+				seen[varName] = true
+
+				fmt.Printf("➡️ Enter value for [%s]: ", varName)
+				var input string
+				fmt.Scanln(&input)
+				replacements["{{"+varName+"}}"] = input
+			}
+
+			for placeholder, val := range replacements {
+				finalCommand = strings.ReplaceAll(finalCommand, placeholder, val)
+			}
+			fmt.Println()
+		}
+
 		var execCmd *exec.Cmd
 		if runtime.GOOS == "windows" {
-			execCmd = exec.Command("cmd", "/c", targetSnippet.Command)
+			execCmd = exec.Command("cmd", "/c", finalCommand)
 		} else {
-			execCmd = exec.Command("bash", "-c", targetSnippet.Command)
+			execCmd = exec.Command("bash", "-c", finalCommand)
 		}
 
 		execCmd.Stdin = os.Stdin
 		execCmd.Stdout = os.Stdout
 		execCmd.Stderr = os.Stderr
 
-		fmt.Printf("🚀 Running snippet '%s' -> %s\n\n", name, targetSnippet.Command)
+		fmt.Printf("🚀 Running snippet '%s' -> %s\n\n", name, finalCommand)
 		if err := execCmd.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "\n❌ Error executing command loop: %v\n", err)
 			os.Exit(1)
