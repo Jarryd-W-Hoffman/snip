@@ -1,7 +1,7 @@
 package main
 
-import "snip"
+import "snip/cmd"
 
 func main() {
-	// ...
+	cmd.Execute()
 }
