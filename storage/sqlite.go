@@ -110,6 +110,24 @@ func (s *Storage) Save(snippets []Snippet) error {
 	return tx.Commit()
 }
 
+// Delete removes a single snippet by its unique lookup name.
+func (s *Storage) Delete(name string) error {
+	_, err := s.db.Exec(`DELETE FROM snippets WHERE name = ?;`, name)
+	return err
+}
+
+// Upsert adds a snippet or updates its fields if the name already exists.
+func (s *Storage) Upsert(snip Snippet) error {
+	query := `
+	INSERT INTO snippets (name, command, description) 
+	VALUES (?, ?, ?)
+	ON CONFLICT(name) DO UPDATE SET
+		command = excluded.command,
+		description = excluded.description;`
+	_, err := s.db.Exec(query, snip.Name, snip.Command, snip.Description)
+	return err
+}
+
 // Close closes the underlying database pool connection.
 func (s *Storage) Close() error {
 	return s.db.Close()
