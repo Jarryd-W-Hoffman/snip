@@ -1,20 +1,23 @@
-// Package cmd handles terminal subcommands. This specific file implements
-// the interactive terminal user interface (TUI) for listing snippets.
+// Package cmd contains the CLI command-line subcommands and routing
+// logic using the Cobra library framework.
 package cmd
 
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"snip/storage"
 
 	"github.com/atotto/clipboard"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
-// Define structural UI component styling definitions using Lip Gloss.
+// Structural UI component styling definitions using Lip Gloss.
 var (
 	docStyle      = lipgloss.NewStyle().Margin(1, 2)
 	titleStyle    = lipgloss.NewStyle().Background(lipgloss.Color("#6200EE")).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1)
@@ -39,12 +42,12 @@ func (i item) FilterValue() string { return i.title + " " + i.desc }
 
 // model stores and encapsulates runtime state properties for the Bubble Tea view loop.
 type model struct {
-	list         list.Model // The internal list bubble component tracking layout view ports
-	copiedStatus string     // A status message displayed upon successful system clipboard copy actions
+	list         list.Model       // The internal list bubble component tracking layout view ports
+	store        *storage.Storage // Active SQLite database layer reference connection pool
+	copiedStatus string           // A status message displayed upon successful system actions
 }
 
 // Init triggers initial asynchronous processes upon TUI application startup.
-// Returning nil indicates no background operations or commands are required.
 func (m model) Init() tea.Cmd {
 	return nil
 }
@@ -54,19 +57,50 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.list.FilterState() == list.Filtering {
+			break
+		}
+
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 
 		case "enter":
 			if i, ok := m.list.SelectedItem().(item); ok {
-				if err := clipboard.WriteAll(i.command); err != nil {
-					m.copiedStatus = fmt.Sprintf("❌ Error writing to clipboard: %v", err)
+				var c *exec.Cmd
+				if runtime.GOOS == "windows" {
+					c = exec.Command("cmd", "/c", i.command)
 				} else {
-					m.copiedStatus = fmt.Sprintf("✓ Copied '%s' to clipboard!", i.title)
+					c = exec.Command("bash", "-c", i.command)
 				}
+
+				return m, tea.Sequence(
+					tea.ExecProcess(c, func(err error) tea.Msg {
+						if err != nil {
+							return fmt.Errorf("command failed: %v", err)
+						}
+						return nil
+					}),
+					tea.Quit,
+				)
 			}
-			return m, tea.Quit
+
+		case "c":
+			if i, ok := m.list.SelectedItem().(item); ok {
+				_ = clipboard.WriteAll(i.command)
+				m.copiedStatus = fmt.Sprintf("✓ Copied '%s' to clipboard!", i.title)
+				return m, nil
+			}
+
+		case "x", "backspace":
+			if i, ok := m.list.SelectedItem().(item); ok {
+				if err := m.store.Delete(i.title); err == nil {
+					idx := m.list.Index()
+					m.list.RemoveItem(idx)
+					m.copiedStatus = fmt.Sprintf("🗑️ Removed '%s'", i.title)
+				}
+				return m, nil
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -88,11 +122,12 @@ func (m model) View() string {
 	return viewStr
 }
 
-// ListCmd maps out configuration, usage guides, and launch behaviors for 'snip list'.
+// ListCmd defines the configuration and behavior of the 'snip list' command.
+// It launches a full-screen interactive TUI dashboard layout to manage snippets.
 var ListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "Interactively view, filter, and copy all snippets",
-	Long:  `Launches a full-screen Terminal User Interface (TUI) allowing rapid navigation and selection of your saved command bank.`,
+	Short: "Interactively view, run, and manage all snippets",
+	Long:  `Launches a full-screen Terminal User Interface (TUI) allowing rapid navigation, inline execution, and deletion of your saved command bank.`,
 	Args:  cobra.NoArgs, // Restricts command to execute only when no stray arguments are provided
 	Run: func(cmd *cobra.Command, args []string) {
 		store, err := storage.NewStorage()
@@ -100,6 +135,7 @@ var ListCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "❌ Error initializing storage configuration: %v\n", err)
 			os.Exit(1)
 		}
+		defer store.Close()
 
 		storedSnippets, err := store.Load()
 		if err != nil {
@@ -116,12 +152,20 @@ var ListCmd = &cobra.Command{
 			})
 		}
 
-		delegate := list.NewDefaultDelegate()
 		m := model{
-			list: list.New(items, delegate, 0, 0),
+			list:  list.New(items, list.NewDefaultDelegate(), 0, 0),
+			store: store,
 		}
-		m.list.Title = " Your Snippets "
+		m.list.Title = " Manage Snippets "
 		m.list.Styles.Title = titleStyle
+		
+		m.list.AdditionalShortHelpKeys = func() []key.Binding {
+			return []key.Binding{
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "run")),
+				key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "copy")),
+				key.NewBinding(key.WithKeys("x", "backspace"), key.WithHelp("x", "delete")),
+			}
+		}
 
 		p := tea.NewProgram(m, tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
