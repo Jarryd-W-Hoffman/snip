@@ -1,4 +1,4 @@
-// Package storage handles data persistence for the snip application
+// Package storage handles relational data persistence for the snip application
 // using a local SQLite flat-file database.
 package storage
 
@@ -7,15 +7,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "github.com/ncruces/go-sqlite3/driver" // Pure Go SQLite driver registration
 )
 
 // Snippet defines the properties of a saved shell shortcut.
 type Snippet struct {
-	Name        string `json:"name"`
-	Command     string `json:"command"`
-	Description string `json:"description"`
+	Name        string   `json:"name"`
+	Command     string   `json:"command"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags"`
 }
 
 // Storage encapsulates the database connection pool state context.
@@ -24,7 +26,7 @@ type Storage struct {
 }
 
 // NewStorage initializes the cross-platform configuration directory,
-// establishes a database connection pool, and ensures the schema exists.
+// establishes a database connection pool, and ensures relational schemas exist.
 func NewStorage() (*Storage, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -42,23 +44,49 @@ func NewStorage() (*Storage, error) {
 		return nil, fmt.Errorf("failed to open database file: %w", err)
 	}
 
-	query := `
+	if _, err := db.Exec(`PRAGMA foreign_keys = ON;`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
+	}
+
+	schema := `
 	CREATE TABLE IF NOT EXISTS snippets (
 		name TEXT PRIMARY KEY,
 		command TEXT NOT NULL,
 		description TEXT
+	);
+
+	CREATE TABLE IF NOT EXISTS tags (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT UNIQUE NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS snippet_tags (
+		snippet_name TEXT,
+		tag_id INTEGER,
+		PRIMARY KEY (snippet_name, tag_id),
+		FOREIGN KEY (snippet_name) REFERENCES snippets(name) ON DELETE CASCADE,
+		FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
 	);`
-	if _, err := db.Exec(query); err != nil {
+
+	if _, err := db.Exec(schema); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("failed to initialize application schema: %w", err)
+		return nil, fmt.Errorf("failed to initialize relational schema: %w", err)
 	}
 
 	return &Storage{db: db}, nil
 }
 
-// Load retrieves all saved snippets from the SQLite database.
+// Load retrieves all saved snippets alongside their compiled tags sorted alphabetically.
 func (s *Storage) Load() ([]Snippet, error) {
-	query := `SELECT name, command, description FROM snippets ORDER BY name ASC;`
+	query := `
+		SELECT s.name, s.command, s.description, GROUP_CONCAT(t.name) as tags
+		FROM snippets s
+		LEFT JOIN snippet_tags st ON s.name = st.snippet_name
+		LEFT JOIN tags t ON st.tag_id = t.id
+		GROUP BY s.name
+		ORDER BY s.name ASC;`
+
 	rows, err := s.db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query records: %w", err)
@@ -68,64 +96,76 @@ func (s *Storage) Load() ([]Snippet, error) {
 	var snippets []Snippet
 	for rows.Next() {
 		var snip Snippet
-		var desc sql.NullString // Handles potential NULL values cleanly
+		var desc sql.NullString
+		var rawTags sql.NullString
 
-		if err := rows.Scan(&snip.Name, &snip.Command, &desc); err != nil {
+		if err := rows.Scan(&snip.Name, &snip.Command, &desc, &rawTags); err != nil {
 			return nil, fmt.Errorf("failed to parse row entry: %w", err)
 		}
 
 		snip.Description = desc.String
+		if rawTags.Valid && rawTags.String != "" {
+			snip.Tags = strings.Split(rawTags.String, ",")
+		} else {
+			snip.Tags = []string{}
+		}
+
 		snippets = append(snippets, snip)
 	}
 
 	return snippets, nil
 }
 
-// Save upserts a collection of snippets into the database. To match the original 
-// architecture's bulk write logic without altering the cmd package loop signatures, 
-// this clears out the target table and rewrites the provided slice atomically inside a transaction.
-func (s *Storage) Save(snippets []Snippet) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("failed to begin write transaction: %w", err)
-	}
-	defer tx.Rollback() // Safely rolls back if an execution step fails
-
-	if _, err := tx.Exec(`DELETE FROM snippets;`); err != nil {
-		return fmt.Errorf("failed to purge stale data: %w", err)
-	}
-
-	stmt, err := tx.Prepare(`INSERT INTO snippets (name, command, description) VALUES (?, ?, ?);`)
-	if err != nil {
-		return fmt.Errorf("failed to compile prepared statement: %w", err)
-	}
-	defer stmt.Close()
-
-	for _, snip := range snippets {
-		if _, err := stmt.Exec(snip.Name, snip.Command, snip.Description); err != nil {
-			return fmt.Errorf("failed to commit row execution context: %w", err)
-		}
-	}
-
-	return tx.Commit()
-}
-
-// Delete removes a single snippet by its unique lookup name.
+// Delete removes a single snippet by its unique lookup name. Foreign key cascades
+// handle clearing entries out of the snippet_tags junction table automatically.
 func (s *Storage) Delete(name string) error {
 	_, err := s.db.Exec(`DELETE FROM snippets WHERE name = ?;`, name)
 	return err
 }
 
-// Upsert adds a snippet or updates its fields if the name already exists.
+// Upsert adds a snippet or updates its fields, handling multi-tag associations cleanly inside a transaction.
 func (s *Storage) Upsert(snip Snippet) error {
-	query := `
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	querySnippet := `
 	INSERT INTO snippets (name, command, description) 
 	VALUES (?, ?, ?)
 	ON CONFLICT(name) DO UPDATE SET
 		command = excluded.command,
 		description = excluded.description;`
-	_, err := s.db.Exec(query, snip.Name, snip.Command, snip.Description)
-	return err
+	if _, err := tx.Exec(querySnippet, snip.Name, snip.Command, snip.Description); err != nil {
+		return fmt.Errorf("failed to upsert base snippet: %w", err)
+	}
+
+	if _, err := tx.Exec(`DELETE FROM snippet_tags WHERE snippet_name = ?;`, snip.Name); err != nil {
+		return fmt.Errorf("failed to clear existing relationships: %w", err)
+	}
+
+	for _, tagName := range snip.Tags {
+		tagName = strings.TrimSpace(strings.ToLower(tagName))
+		if tagName == "" {
+			continue
+		}
+
+		if _, err := tx.Exec(`INSERT INTO tags (name) VALUES (?) ON CONFLICT(name) DO NOTHING;`, tagName); err != nil {
+			return fmt.Errorf("failed to ensure tag existence: %w", err)
+		}
+
+		var tagID int
+		if err := tx.QueryRow(`SELECT id FROM tags WHERE name = ?;`, tagName).Scan(&tagID); err != nil {
+			return fmt.Errorf("failed to retrieve tag identity context: %w", err)
+		}
+
+		if _, err := tx.Exec(`INSERT INTO snippet_tags (snippet_name, tag_id) VALUES (?, ?);`, snip.Name, tagID); err != nil {
+			return fmt.Errorf("failed to link tag junction association: %w", err)
+		}
+	}
+
+	return tx.Commit()
 }
 
 // Close closes the underlying database pool connection.

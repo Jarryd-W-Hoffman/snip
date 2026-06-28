@@ -8,68 +8,51 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Internal storage tracking for command-line flag inputs.
 var (
 	commandStr string
 	descStr    string
+	tagsSlice  []string
 )
 
-// SaveCmd defines the configuration, flag definitions, and execution behavior 
-// of the 'snip save' command.
 var SaveCmd = &cobra.Command{
 	Use:   "save [name]",
-	Short: "Save or update a designated code snippet or command",
-	Long:  `Accepts a unique lookup name as an argument along with required utility flags to persist a command to disk.`,
+	Short: "Save a command snippet",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		name := args[0]
 
+		if commandStr == "" {
+			fmt.Println("❌ Error: --command (-c) flag is required.")
+			os.Exit(1)
+		}
+
 		store, err := storage.NewStorage()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error initializing storage: %v\n", err)
+			fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
 			os.Exit(1)
 		}
+		defer store.Close()
 
-		snippets, err := store.Load()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error reading existing database record: %v\n", err)
-			os.Exit(1)
-		}
-
-		newSnippet := storage.Snippet{
+		snippet := storage.Snippet{
 			Name:        name,
 			Command:     commandStr,
 			Description: descStr,
+			Tags:        tagsSlice,
 		}
 
-		updated := false
-		for i, s := range snippets {
-			if s.Name == name {
-				snippets[i] = newSnippet
-				updated = true
-				break
-			}
-		}
-
-		if !updated {
-			snippets = append(snippets, newSnippet)
-		}
-
-		err = store.Save(snippets)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error committing record to local storage: %v\n", err)
+		if err := store.Upsert(snippet); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Error saving snippet: %v\n", err)
 			os.Exit(1)
 		}
 
-		fmt.Printf("✨ Successfully saved snippet '%s'!\n", name)
+		fmt.Printf("✅ Snippet '%s' saved successfully with %d tag(s)!\n", name, len(tagsSlice))
 	},
 }
 
 func init() {
-	SaveCmd.Flags().StringVarP(&commandStr, "command", "c", "", "The executable command string to preserve (Required)")
-	SaveCmd.Flags().StringVarP(&descStr, "desc", "d", "", "A short functional summary or description of the snippet")
-
-	SaveCmd.MarkFlagRequired("command")
+	SaveCmd.Flags().StringVarP(&commandStr, "command", "c", "", "The terminal command block to store (required)")
+	SaveCmd.Flags().StringVarP(&descStr, "desc", "d", "", "A short description tracking execution behavior context summaries")
+	SaveCmd.Flags().StringSliceVarP(&tagsSlice, "tag", "t", []string{}, "Category labels or project stack groupings to associate with snippet")
 
 	RootCmd.AddCommand(SaveCmd)
 }

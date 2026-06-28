@@ -25,7 +25,7 @@ type sessionMode int
 
 const (
 	modeBrowsing sessionMode = iota // Standard snippet navigation list state
-	modeInput                      // Interactive contextual variable gathering state
+	modeInput                       // Interactive contextual variable gathering state
 )
 
 // Structural UI component styling definitions using Lip Gloss.
@@ -36,35 +36,52 @@ var (
 	promptStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#EE00AA")).Bold(true)
 )
 
+// item wraps a storage.Snippet to satisfy the bubbletea list.Item layout interface.
 type item struct {
-	title   string
-	desc    string
-	command string
+	title   string   // Maps to the Snippet lookup name
+	desc    string   // Maps to the Snippet description
+	command string   // Maps to the raw snippet terminal action block
+	tags    []string // Store relational metadata tags inside item data definitions
 }
 
-func (i item) Title() string       { return i.title }
-func (i item) Description() string { return i.desc }
-func (i item) FilterValue() string { return i.title + " " + i.desc }
+// Title returns the main string to render in the interactive list layout row.
+func (i item) Title() string { return i.title }
+
+// Description returns the secondary text block rendered directly below the title row, appending metadata tags.
+func (i item) Description() string {
+	if len(i.tags) > 0 {
+		return fmt.Sprintf("[%s] %s", strings.Join(i.tags, ", "), i.desc)
+	}
+	return i.desc
+}
+
+// FilterValue defines the searchable terms evaluated when filtering the TUI menu rows.
+func (i item) FilterValue() string {
+	return i.title + " " + i.desc + " " + strings.Join(i.tags, " ")
+}
 
 // model stores and encapsulates runtime state properties for the Bubble Tea view loop.
 type model struct {
-	list          list.Model
-	store         *storage.Storage
-	copiedStatus  string
-	
+	list         list.Model       // The internal list bubble component tracking layout view ports
+	store        *storage.Storage // Active SQLite database layer reference connection pool
+	copiedStatus string           // A status message displayed upon successful system actions
+
 	// Variable parsing engine state properties
-	mode          sessionMode
-	textInput     textinput.Model
-	targetItem    item
-	variables     []string
-	varIndex      int
-	replacements  map[string]string
+	mode         sessionMode       // Tracking active display focus context splits
+	textInput    textinput.Model   // Native focused dynamic text entry box bubble
+	targetItem   item              // Stashed target command reference being evaluated
+	variables    []string          // Deduplicated array slice tracking variable labels to satisfy
+	varIndex     int               // Current lookup element tracking cursor pointer location
+	replacements map[string]string // Key-value placeholder tracking container mappings
 }
 
+// Init triggers initial asynchronous processes upon TUI application startup.
 func (m model) Init() tea.Cmd {
 	return nil
 }
 
+// Update intercepts runtime messages, windows size recalculations, and keyboard actions,
+// adjusting internal model data state properties appropriately based on active modes.
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -191,6 +208,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// View evaluates structural properties and outputs standard formatted strings to the terminal.
 func (m model) View() string {
 	if m.mode == modeInput {
 		return docStyle.Render(fmt.Sprintf(
@@ -208,11 +226,13 @@ func (m model) View() string {
 	return viewStr
 }
 
+// ListCmd defines the configuration and behavior of the 'snip list' command.
+// It launches a full-screen interactive TUI dashboard layout to manage snippets.
 var ListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Interactively view, run, and manage all snippets",
 	Long:  `Launches a full-screen Terminal User Interface (TUI) allowing rapid navigation, inline execution, and deletion of your saved command bank.`,
-	Args:  cobra.NoArgs,
+	Args:  cobra.NoArgs, // Restricts command to execute only when no stray arguments are provided
 	Run: func(cmd *cobra.Command, args []string) {
 		store, err := storage.NewStorage()
 		if err != nil {
@@ -233,6 +253,7 @@ var ListCmd = &cobra.Command{
 				title:   s.Name,
 				desc:    s.Description,
 				command: s.Command,
+				tags:    s.Tags,
 			})
 		}
 
@@ -243,7 +264,7 @@ var ListCmd = &cobra.Command{
 		}
 		m.list.Title = " Manage Snippets "
 		m.list.Styles.Title = titleStyle
-		
+
 		m.list.AdditionalShortHelpKeys = func() []key.Binding {
 			return []key.Binding{
 				key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "run")),
