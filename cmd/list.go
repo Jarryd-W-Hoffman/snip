@@ -25,6 +25,11 @@ const (
 	modeInput                       // Interactive contextual variable gathering state
 )
 
+// execCompleteMsg is sent back from ExecProcess when a snippet finishes running.
+type execCompleteMsg struct {
+	err error
+}
+
 // Structural UI component styling definitions using Lip Gloss.
 var (
 	docStyle      = lipgloss.NewStyle().Margin(1, 2)
@@ -124,10 +129,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// 🚀 Record interactive execution tracking metrics natively prior to running
 				_ = m.store.IncrementUsage(m.targetItem.title)
 
-				return m, tea.Sequence(
-					tea.ExecProcess(buildExecCommand(finalCommand), func(err error) tea.Msg { return nil }),
-					tea.Quit,
-				)
+				return m, tea.ExecProcess(buildExecCommand(finalCommand), func(err error) tea.Msg {
+					return execCompleteMsg{err: err}
+				})
 			}
 		}
 
@@ -176,10 +180,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Standard execution path if command lacks template placeholders
 				_ = m.store.IncrementUsage(i.title)
 
-				return m, tea.Sequence(
-					tea.ExecProcess(buildExecCommand(i.command), func(err error) tea.Msg { return nil }),
-					tea.Quit,
-				)
+				return m, tea.ExecProcess(buildExecCommand(i.command), func(err error) tea.Msg {
+					return execCompleteMsg{err: err}
+				})
 			}
 
 		// 📋 INLINE COPY: Write the command string directly into the system clipboard
@@ -206,6 +209,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
+
+	// 🏁 Exec process finished — show error if any, then quit
+	case execCompleteMsg:
+		if msg.err != nil {
+			m.copiedStatus = fmt.Sprintf("❌ Command failed: %v", msg.err)
+		}
+		return m, tea.Quit
 	}
 
 	m.list, cmd = m.list.Update(msg)
@@ -221,6 +231,14 @@ func (m model) View() string {
 			titleStyle.Render(" Configure Variables "),
 			promptStyle.Render(fmt.Sprintf("Snippet: %s", m.targetItem.title)),
 			m.textInput.View(),
+		))
+	}
+
+	// Empty state: show a helpful message instead of a blank list
+	if len(m.list.Items()) == 0 {
+		return docStyle.Render(fmt.Sprintf(
+			"%s\n\n✨ No snippets yet — use 'snip save --command \"your command\" <name>' to get started\n\nPress q or Ctrl+C to exit.",
+			titleStyle.Render(" Manage Snippets "),
 		))
 	}
 
@@ -272,6 +290,7 @@ var ListCmd = &cobra.Command{
 		}
 		m.list.Title = " Manage Snippets "
 		m.list.Styles.Title = titleStyle
+		m.list.SetStatusBarItemName("snippet", "snippets")
 
 		// Configure explicit shortcut help labels at the bottom of the viewport menu
 		m.list.AdditionalShortHelpKeys = func() []key.Binding {

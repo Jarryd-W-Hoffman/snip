@@ -49,3 +49,45 @@ func TestSaveCmd_MissingName(t *testing.T) {
 		t.Fatal("expected error for missing name")
 	}
 }
+
+func TestSaveCmd_EmptyName(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	if err := SaveCmd.Flags().Set("command", "echo hi"); err != nil {
+		t.Fatal(err)
+	}
+
+	err := SaveCmd.RunE(SaveCmd, []string{"  "})
+	if err == nil {
+		t.Fatal("expected error for whitespace-only name")
+	}
+}
+
+func TestSaveCmd_TrimsName(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	if err := SaveCmd.Flags().Set("command", "echo hi"); err != nil {
+		t.Fatal(err)
+	}
+
+	err := SaveCmd.RunE(SaveCmd, []string{"  my-snippet  "})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	s, err := storage.NewStorage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	sn, err := s.GetByName("my-snippet")
+	if err != nil {
+		t.Fatalf("expected trimmed name to be saved: %v", err)
+	}
+	if sn.Name != "my-snippet" {
+		t.Errorf("expected name 'my-snippet', got %q", sn.Name)
+	}
+}

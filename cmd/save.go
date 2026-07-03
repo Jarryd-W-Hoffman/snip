@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"snip/storage"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -18,7 +19,10 @@ var SaveCmd = &cobra.Command{
 	Short: "Save a command snippet",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
+		name := strings.TrimSpace(args[0])
+		if name == "" {
+			return fmt.Errorf("snippet name cannot be empty")
+		}
 
 		store, err := storage.NewStorage()
 		if err != nil {
