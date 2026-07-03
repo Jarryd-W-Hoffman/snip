@@ -20,24 +20,21 @@ var RunCmd = &cobra.Command{
 	Long: `Accepts a unique lookup name as an argument, retrieves the corresponding 
 command string from storage, and executes it inside a platform-appropriate subshell.`,
 	Args: cobra.ExactArgs(1), // Enforces that exactly one argument (the snippet name) is supplied
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
 		store, err := storage.NewStorage()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error initializing storage configuration: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("❌ Error initializing storage configuration: %w", err)
 		}
 		defer store.Close()
 
 		targetSnippet, err := store.GetByName(name)
 		if err == storage.ErrNotFound {
-			fmt.Fprintf(os.Stderr, "❌ Error: No snippet found with the name '%s'.\n", name)
-			os.Exit(1)
+			return fmt.Errorf("❌ Error: No snippet found with the name '%s'", name)
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error reading snippet: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("❌ Error reading snippet: %w", err)
 		}
 
 		finalCommand := targetSnippet.Command
@@ -52,8 +49,7 @@ command string from storage, and executes it inside a platform-appropriate subsh
 				fmt.Printf("➡️ Enter value for [%s]: ", v)
 				input, err := reader.ReadString('\n')
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "❌ Error reading input: %v\n", err)
-					os.Exit(1)
+					return fmt.Errorf("❌ Error reading input: %w", err)
 				}
 				replacements["{{"+v+"}}"] = strings.TrimRight(input, "\r\n")
 			}
@@ -68,13 +64,14 @@ command string from storage, and executes it inside a platform-appropriate subsh
 		execCmd.Stderr = os.Stderr
 
 		if err := execCmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error executing command shortcut: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("❌ Error executing command shortcut: %w", err)
 		}
 
 		if err := store.IncrementUsage(name); err != nil {
 			fmt.Fprintf(os.Stderr, "⚠️ Telemetry Warning: %v\n", err)
 		}
+
+		return nil
 	},
 }
 

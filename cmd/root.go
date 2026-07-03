@@ -22,7 +22,7 @@ instantly copying selected entries back to your system clipboard.`,
 // This is called by main.go and is the primary entry point for the CLI runtime application loop.
 func Execute() {
 	if err := RootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error executing application: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 }

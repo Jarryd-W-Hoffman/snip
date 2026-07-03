@@ -4,7 +4,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"snip/storage"
 
 	"github.com/spf13/cobra"
@@ -18,25 +17,23 @@ var RemoveCmd = &cobra.Command{
 	Short:   "Permanently remove a command snippet by name",
 	Long:    `Deletes a specified command snippet row entirely from the local SQLite relational storage database index layer.`,
 	Args:    cobra.ExactArgs(1), // Enforces that exactly one lookup target argument must be supplied
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
 		store, err := storage.NewStorage()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error initializing storage configuration: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("❌ Error initializing storage configuration: %w", err)
 		}
 		defer store.Close()
 
 		if err := store.Delete(name); err == storage.ErrNotFound {
-			fmt.Fprintf(os.Stderr, "❌ Error: No snippet found with the name '%s'.\n", name)
-			os.Exit(1)
+			return fmt.Errorf("❌ Error: No snippet found with the name '%s'", name)
 		} else if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error deleting snippet from database: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("❌ Error deleting snippet from database: %w", err)
 		}
 
 		fmt.Printf("🗑️ Snippet '%s' permanently removed successfully.\n", name)
+		return nil
 	},
 }
 

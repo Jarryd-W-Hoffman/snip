@@ -4,7 +4,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"snip/storage"
 	"strings"
@@ -239,20 +238,18 @@ var ListCmd = &cobra.Command{
 	Short: "Interactively view, run, and manage all snippets",
 	Long:  `Launches a full-screen Terminal User Interface (TUI) allowing rapid navigation, inline execution, and deletion of your saved command bank.`,
 	Args:  cobra.NoArgs, // Restricts command to execute only when no stray arguments are provided
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		// 1. Establish database storage instance reference links
 		store, err := storage.NewStorage()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error initializing storage configuration: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("❌ Error initializing storage configuration: %w", err)
 		}
 		defer store.Close()
 
 		// 2. Load snippet rows from SQLite database
 		storedSnippets, err := store.Load()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error loading records from database file: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("❌ Error loading records from database file: %w", err)
 		}
 
 		// 3. Process records into list model data formats
@@ -288,9 +285,10 @@ var ListCmd = &cobra.Command{
 		// 5. Initialize the bubble tea execution loop within full viewport alternative screens
 		p := tea.NewProgram(m, tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error executing user interface loop: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("Error executing user interface loop: %w", err)
 		}
+
+		return nil
 	},
 }
 

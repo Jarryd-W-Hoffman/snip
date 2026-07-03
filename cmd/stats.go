@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"snip/storage"
 
 	"github.com/spf13/cobra"
@@ -12,18 +11,16 @@ var StatsCmd = &cobra.Command{
 	Use:   "stats",
 	Short: "Show usage metrics and snippet analytics",
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		store, err := storage.NewStorage()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error initializing storage configuration: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("❌ Error initializing storage configuration: %w", err)
 		}
 		defer store.Close()
 
 		snippets, err := store.Load()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error loading metrics: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("❌ Error loading metrics: %w", err)
 		}
 
 		fmt.Println("📊 SNIP TELEMETRY DASHBOARD")
@@ -52,6 +49,8 @@ var StatsCmd = &cobra.Command{
 			s := snippets[i]
 			fmt.Printf("  %-15s | Runs: %-3d | %s\n", s.Name, s.UsageCount, s.Description)
 		}
+
+		return nil
 	},
 }
 
