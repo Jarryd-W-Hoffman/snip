@@ -28,7 +28,10 @@ var RemoveCmd = &cobra.Command{
 		}
 		defer store.Close()
 
-		if err := store.Delete(name); err != nil {
+		if err := store.Delete(name); err == storage.ErrNotFound {
+			fmt.Fprintf(os.Stderr, "❌ Error: No snippet found with the name '%s'.\n", name)
+			os.Exit(1)
+		} else if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Error deleting snippet from database: %v\n", err)
 			os.Exit(1)
 		}

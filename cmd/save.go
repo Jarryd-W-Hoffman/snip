@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"snip/storage"
 
 	"github.com/spf13/cobra"
@@ -18,18 +17,12 @@ var SaveCmd = &cobra.Command{
 	Use:   "save [name]",
 	Short: "Save a command snippet",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-
-		if commandStr == "" {
-			fmt.Println("❌ Error: --command (-c) flag is required.")
-			os.Exit(1)
-		}
 
 		store, err := storage.NewStorage()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("error initializing storage: %w", err)
 		}
 		defer store.Close()
 
@@ -41,18 +34,19 @@ var SaveCmd = &cobra.Command{
 		}
 
 		if err := store.Upsert(snippet); err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error saving snippet: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("error saving snippet: %w", err)
 		}
 
 		fmt.Printf("✅ Snippet '%s' saved successfully with %d tag(s)!\n", name, len(tagsSlice))
+		return nil
 	},
 }
 
 func init() {
-	SaveCmd.Flags().StringVarP(&commandStr, "command", "c", "", "The terminal command block to store (required)")
+	SaveCmd.Flags().StringVarP(&commandStr, "command", "c", "", "The terminal command block to store")
 	SaveCmd.Flags().StringVarP(&descStr, "desc", "d", "", "A short description tracking execution behavior context summaries")
 	SaveCmd.Flags().StringSliceVarP(&tagsSlice, "tag", "t", []string{}, "Category labels or project stack groupings to associate with snippet")
+	SaveCmd.MarkFlagRequired("command")
 
 	RootCmd.AddCommand(SaveCmd)
 }

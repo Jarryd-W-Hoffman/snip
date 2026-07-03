@@ -4,6 +4,7 @@ package storage
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,12 +13,16 @@ import (
 	_ "github.com/ncruces/go-sqlite3/driver" // Pure Go SQLite driver registration
 )
 
+// ErrNotFound is returned when a snippet is not found by name.
+var ErrNotFound = errors.New("snippet not found")
+
 // Snippet defines the properties of a saved shell shortcut.
 type Snippet struct {
-	Name        string   `json:"name"`
-	Command     string   `json:"command"`
-	Description string   `json:"description"`
-	Tags        []string `json:"tags"`
+	Name        string
+	Command     string
+	Description string
+	Tags        []string
+	UsageCount  int
 }
 
 // Storage encapsulates the database connection pool state context.
@@ -74,18 +79,31 @@ func NewStorage() (*Storage, error) {
 		return nil, fmt.Errorf("failed to initialize relational schema: %w", err)
 	}
 
+	var count int
+	err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('snippets') WHERE name='usage_count';`).Scan(&count)
+	if err == nil && count == 0 {
+		if _, err := db.Exec(`ALTER TABLE snippets ADD COLUMN usage_count INTEGER DEFAULT 0;`); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("failed to add usage_count column: %w", err)
+		}
+		if _, err := db.Exec(`ALTER TABLE snippets ADD COLUMN last_used_at DATETIME;`); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("failed to add last_used_at column: %w", err)
+		}
+	}
+
 	return &Storage{db: db}, nil
 }
 
-// Load retrieves all saved snippets alongside their compiled tags sorted alphabetically.
+// Load retrieves all saved snippets alongside their compiled tags sorted by usage.
 func (s *Storage) Load() ([]Snippet, error) {
 	query := `
-		SELECT s.name, s.command, s.description, GROUP_CONCAT(t.name) as tags
+		SELECT s.name, s.command, s.description, GROUP_CONCAT(t.name) as tags, s.usage_count
 		FROM snippets s
 		LEFT JOIN snippet_tags st ON s.name = st.snippet_name
 		LEFT JOIN tags t ON st.tag_id = t.id
 		GROUP BY s.name
-		ORDER BY s.name ASC;`
+		ORDER BY s.usage_count DESC, s.name ASC;`
 
 	rows, err := s.db.Query(query)
 	if err != nil {
@@ -99,7 +117,7 @@ func (s *Storage) Load() ([]Snippet, error) {
 		var desc sql.NullString
 		var rawTags sql.NullString
 
-		if err := rows.Scan(&snip.Name, &snip.Command, &desc, &rawTags); err != nil {
+		if err := rows.Scan(&snip.Name, &snip.Command, &desc, &rawTags, &snip.UsageCount); err != nil {
 			return nil, fmt.Errorf("failed to parse row entry: %w", err)
 		}
 
@@ -112,15 +130,85 @@ func (s *Storage) Load() ([]Snippet, error) {
 
 		snippets = append(snippets, snip)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration failed: %w", err)
+	}
 
 	return snippets, nil
 }
 
+// GetByName retrieves a single snippet by its unique name.
+func (s *Storage) GetByName(name string) (*Snippet, error) {
+	query := `
+		SELECT s.name, s.command, s.description, GROUP_CONCAT(t.name) as tags, s.usage_count
+		FROM snippets s
+		LEFT JOIN snippet_tags st ON s.name = st.snippet_name
+		LEFT JOIN tags t ON st.tag_id = t.id
+		WHERE s.name = ?
+		GROUP BY s.name;`
+
+	var snip Snippet
+	var desc sql.NullString
+	var rawTags sql.NullString
+
+	err := s.db.QueryRow(query, name).Scan(&snip.Name, &snip.Command, &desc, &rawTags, &snip.UsageCount)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query snippet: %w", err)
+	}
+
+	snip.Description = desc.String
+	if rawTags.Valid && rawTags.String != "" {
+		snip.Tags = strings.Split(rawTags.String, ",")
+	} else {
+		snip.Tags = []string{}
+	}
+
+	return &snip, nil
+}
+
+// IncrementUsage steps up the frequency logs metrics counter and timestamps the record execution event.
+func (s *Storage) IncrementUsage(name string) error {
+	targetName := strings.TrimSpace(name)
+
+	result, err := s.db.Exec(`
+		UPDATE snippets 
+		SET usage_count = usage_count + 1, 
+		    last_used_at = CURRENT_TIMESTAMP 
+		WHERE name = ?;`, targetName)
+	if err != nil {
+		return fmt.Errorf("telemetry update failed: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
 // Delete removes a single snippet by its unique lookup name. Foreign key cascades
 // handle clearing entries out of the snippet_tags junction table automatically.
+// Returns ErrNotFound if no snippet with the given name exists.
 func (s *Storage) Delete(name string) error {
-	_, err := s.db.Exec(`DELETE FROM snippets WHERE name = ?;`, name)
-	return err
+	result, err := s.db.Exec(`DELETE FROM snippets WHERE name = ?;`, name)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // Upsert adds a snippet or updates its fields, handling multi-tag associations cleanly inside a transaction.
