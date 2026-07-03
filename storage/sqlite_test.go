@@ -301,10 +301,9 @@ func TestStorageClose(t *testing.T) {
 
 func TestNewStorageFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-	if err := os.Setenv("HOME", tmpDir); err != nil {
-		// On some platforms UserConfigDir uses HOME
-	}
+
+	// Override both so the test works even when XDG_CONFIG_HOME is set (e.g. CI).
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, ".config"))
 
 	s, err := NewStorage()
 	if err != nil {
