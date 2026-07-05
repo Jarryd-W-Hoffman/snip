@@ -6,7 +6,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"snip/storage"
+	"github.com/Jarryd-W-Hoffman/snip/storage"
 	"strings"
 
 	"github.com/spf13/cobra"

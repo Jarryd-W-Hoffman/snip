@@ -5,7 +5,7 @@ package cmd
 import (
 	"fmt"
 	"regexp"
-	"snip/storage"
+	"github.com/Jarryd-W-Hoffman/snip/storage"
 	"strings"
 
 	"github.com/atotto/clipboard"

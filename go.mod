@@ -1,4 +1,4 @@
-module snip
+module github.com/Jarryd-W-Hoffman/snip
 
 go 1.26.4
 

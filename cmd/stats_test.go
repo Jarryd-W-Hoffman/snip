@@ -3,7 +3,7 @@ package cmd
 import (
 	"testing"
 
-	"snip/storage"
+	"github.com/Jarryd-W-Hoffman/snip/storage"
 )
 
 func TestStatsCmd_Empty(t *testing.T) {

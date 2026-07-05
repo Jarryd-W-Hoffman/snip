@@ -4,7 +4,7 @@ package cmd
 
 import (
 	"fmt"
-	"snip/storage"
+	"github.com/Jarryd-W-Hoffman/snip/storage"
 
 	"github.com/spf13/cobra"
 )
