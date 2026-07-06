@@ -2,9 +2,12 @@ package cmd
 
 import (
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 )
+
+var varRe = regexp.MustCompile(`\{\{([^}]+)\}\}`)
 
 // extractVariables returns deduplicated variable names found in {{var}} placeholders.
 func extractVariables(command string) []string {

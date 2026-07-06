@@ -15,7 +15,7 @@ var RemoveCmd = &cobra.Command{
 	Use:     "remove [name]",
 	Aliases: []string{"rm", "delete"}, // Helpful fallback command aliases
 	Short:   "Permanently remove a command snippet by name",
-	Long:    `Deletes a specified command snippet row entirely from the local SQLite relational storage database index layer.`,
+	Long:    `Remove a saved snippet by name.`,
 	Args:    cobra.ExactArgs(1), // Enforces that exactly one lookup target argument must be supplied
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]

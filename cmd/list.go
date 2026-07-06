@@ -4,7 +4,6 @@ package cmd
 
 import (
 	"fmt"
-	"regexp"
 	"github.com/Jarryd-W-Hoffman/snip/storage"
 	"strings"
 
@@ -36,8 +35,6 @@ var (
 	titleStyle    = lipgloss.NewStyle().Background(lipgloss.Color("#6200EE")).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1)
 	statusMessage = lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
 	promptStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#EE00AA")).Bold(true)
-
-	varRe = regexp.MustCompile(`\{\{([^}]+)\}\}`)
 )
 
 // item wraps a storage.Snippet to satisfy the bubbletea list.Item layout interface.

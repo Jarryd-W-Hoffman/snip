@@ -17,8 +17,7 @@ import (
 var RunCmd = &cobra.Command{
 	Use:   "run [name]",
 	Short: "Execute a saved snippet directly in your terminal shell",
-	Long: `Accepts a unique lookup name as an argument, retrieves the corresponding 
-command string from storage, and executes it inside a platform-appropriate subshell.`,
+	Long: `Run a saved snippet by name.`,
 	Args: cobra.ExactArgs(1), // Enforces that exactly one argument (the snippet name) is supplied
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]

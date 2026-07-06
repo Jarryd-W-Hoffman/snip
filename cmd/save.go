@@ -17,16 +17,17 @@ var (
 var SaveCmd = &cobra.Command{
 	Use:   "save [name]",
 	Short: "Save a command snippet",
+	Long:  "Save a new command snippet or update an existing one by name.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := strings.TrimSpace(args[0])
 		if name == "" {
-			return fmt.Errorf("snippet name cannot be empty")
+			return fmt.Errorf("❌ Snippet name cannot be empty")
 		}
 
 		store, err := storage.NewStorage()
 		if err != nil {
-			return fmt.Errorf("error initializing storage: %w", err)
+			return fmt.Errorf("❌ Error initializing storage: %w", err)
 		}
 		defer store.Close()
 
@@ -38,7 +39,7 @@ var SaveCmd = &cobra.Command{
 		}
 
 		if err := store.Upsert(snippet); err != nil {
-			return fmt.Errorf("error saving snippet: %w", err)
+			return fmt.Errorf("❌ Error saving snippet: %w", err)
 		}
 
 		fmt.Printf("✅ Snippet '%s' saved successfully with %d tag(s)!\n", name, len(tagsSlice))
