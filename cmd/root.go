@@ -16,6 +16,7 @@ var RootCmd = &cobra.Command{
 	Long: `snip allows you to store, categorize, and quickly reference frequently
 used shell commands, script blocks, and code snippets directly inside your terminal,
 instantly copying selected entries back to your system clipboard.`,
+	SilenceErrors: true, // Execute prints errors itself
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

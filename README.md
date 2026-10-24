@@ -60,19 +60,20 @@ snip save iap-proxy \
 
 ### `snip list` — Interactive TUI
 
-Opens a full-screen Bubble Tea terminal UI for browsing, running, copying, and deleting snippets.
+Opens a full-screen Bubble Tea terminal UI for browsing, running, copying, and deleting snippets. On terminals 90+ columns wide, a detail pane beside the list shows the selected snippet's full command, variables, tags, and run count.
 
 | Key | Action |
 |---|---|
 | `enter` | Run the selected snippet |
 | `c` | Copy the command to your clipboard |
-| `x` / `backspace` | Delete the snippet |
+| `x` / `backspace` | Delete the snippet (press `y` to confirm) |
 | `q` / `ctrl+c` | Quit the TUI |
 | `/` | Filter/search snippets by name, description, or tags |
+| `?` | Show all key bindings |
 
 Snippets are displayed sorted by usage frequency — the commands you run most appear at the top.
 
-When you run a snippet from the TUI, the command executes in your current shell, output streams in real time, and the TUI closes automatically when the command finishes. If the command fails, the error is shown before exiting.
+When you run a snippet from the TUI, the command executes in your current shell, output streams in real time, and the TUI closes automatically when the command finishes. If the command fails, its error is printed after the TUI closes.
 
 ### `snip run <name>` — Run a snippet directly
 
@@ -131,7 +132,7 @@ snip run ssh-iap
 # ➡️ Enter value for [project]: my-production-project
 ```
 
-The TUI also supports placeholders — selecting a snippet with `{{var}}` patterns opens an inline prompt for each variable before execution.
+The TUI also supports placeholders — selecting a snippet with `{{var}}` patterns opens a form with one field per variable and a live preview of the final command. Use `tab` / `shift+tab` to move between fields, `enter` on the last field to run, and `esc` to cancel.
 
 ## Real-world example: GCP IAP tunnels
 
